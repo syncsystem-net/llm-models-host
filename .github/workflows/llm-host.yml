@@ -1,0 +1,87 @@
+name: LLM host
+
+# Manual control panel: spin the model server up, tear it down, check status, or see live GPU prices.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options: [up, down, status, catalog]
+        default: up
+      provider:
+        description: Cloud provider
+        type: choice
+        options: [runpod, aws]
+        default: runpod
+      size:
+        description: Server size (estimated cost; the run summary shows the real rate)
+        type: choice
+        options:
+          - "small · 24 GB GPU (RTX 4090) · ~$0.69/h"
+          - "medium · 48 GB GPU (L40S / A6000) · ~$0.86/h"
+          - "large · 80 GB GPU (H100) · ~$2.69/h"
+        default: "small · 24 GB GPU (RTX 4090) · ~$0.69/h"
+      models:
+        description: Comma-separated Ollama model names (empty = DEFAULT_MODELS variable)
+        type: string
+        default: ""
+      auto_shutdown_hours:
+        description: Hours until automatic teardown (empty = AUTO_SHUTDOWN_HOURS variable, else 6)
+        type: string
+        default: ""
+      context_length:
+        description: Context window in tokens (empty = size default 32k / 64k / 128k)
+        type: string
+        default: ""
+      recreate:
+        description: If already running, replace the running server
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: llm-host-${{ inputs.provider }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: ${{ inputs.action }} (${{ inputs.provider }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ${{ inputs.action }}
+        shell: bash
+        env:
+          ACTION: ${{ inputs.action }}
+          PROVIDER: ${{ inputs.provider }}
+          SIZE: ${{ inputs.size }}
+          MODELS: ${{ inputs.models || vars.DEFAULT_MODELS }}
+          AUTO_SHUTDOWN_HOURS: ${{ inputs.auto_shutdown_hours || vars.AUTO_SHUTDOWN_HOURS || '6' }}
+          CONTEXT_LENGTH: ${{ inputs.context_length }}
+          RECREATE: ${{ inputs.recreate }}
+          DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || 'llmhost' }}
+          PUBLIC_HOSTNAME: ${{ vars.PUBLIC_HOSTNAME }}
+          LLMHOST_IMAGE: ${{ vars.LLMHOST_IMAGE }}
+          READY_TIMEOUT_MINUTES: ${{ vars.READY_TIMEOUT_MINUTES || '45' }}
+          KEEP_ON_FAILURE: ${{ vars.KEEP_ON_FAILURE || 'false' }}
+          OLLAMA_KV_CACHE_TYPE: ${{ vars.OLLAMA_KV_CACHE_TYPE }}
+          # secrets
+          API_TOKEN: ${{ secrets.LLMHOST_API_TOKEN }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          # runpod
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          RUNPOD_CLOUD: ${{ vars.RUNPOD_CLOUD || 'SECURE' }}
+          RUNPOD_NETWORK_VOLUME_ID: ${{ vars.RUNPOD_NETWORK_VOLUME_ID }}
+          RUNPOD_DATA_CENTER_IDS: ${{ vars.RUNPOD_DATA_CENTER_IDS }}
+          RUNPOD_REGISTRY_AUTH_ID: ${{ vars.RUNPOD_REGISTRY_AUTH_ID }}
+          RUNPOD_MIN_CUDA_VERSION: ${{ vars.RUNPOD_MIN_CUDA_VERSION }}
+        run: |
+          export LLMHOST_IMAGE="${LLMHOST_IMAGE:-ghcr.io/${GITHUB_REPOSITORY,,}:latest}"
+          bash scripts/llmhost.sh "$ACTION"

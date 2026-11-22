@@ -1,0 +1,43 @@
+name: Auto-shutdown
+
+# Terminates servers whose expiry (set at deploy time from AUTO_SHUTDOWN_HOURS) has passed.
+# Scheduled workflows only run on the default branch, can be delayed by GitHub at busy times,
+# and are disabled after 60 days without repository activity — so the container also has a
+# self-terminate backup (see image/entrypoint.sh).
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-shutdown
+  cancel-in-progress: false
+
+jobs:
+  reap:
+    name: reap (${{ matrix.provider }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [runpod]   # add providers here once implemented
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Terminate expired servers
+        shell: bash
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || 'llmhost' }}
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: |
+          if [[ "$PROVIDER" == runpod && -z "$RUNPOD_API_KEY" ]]; then
+            echo "RUNPOD_API_KEY not configured; skipping"; exit 0
+          fi
+          bash scripts/llmhost.sh reap

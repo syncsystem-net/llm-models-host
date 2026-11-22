@@ -1,0 +1,35 @@
+name: CI
+
+# Static checks for every PR. Make "CI / checks" a required status check on main.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck
+        run: shellcheck -x -S warning scripts/*.sh lib/*.sh providers/*/provider.sh image/entrypoint.sh
+
+      - name: Validate sizes.json
+        run: |
+          for f in providers/*/sizes.json; do
+            jq -e 'has("small") and has("medium") and has("large")
+                   and ([.[] | has("est_usd_per_hour") and has("context_length")] | all)' "$f" >/dev/null \
+              || { echo "::error file=$f::sizes.json must define small/medium/large with est_usd_per_hour and context_length"; exit 1; }
+          done
+
+      - name: Build image (no push) and test it without a GPU
+        run: |
+          docker build -t llmhost:ci image
+          bash scripts/test-image.sh llmhost:ci

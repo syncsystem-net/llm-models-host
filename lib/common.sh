@@ -90,8 +90,8 @@ cmd_up() {
 
   expires_at=$(( $(now) + hours_s ))
   name=$(instance_name "$expires_at")
-  CONTEXT_LENGTH="${CONTEXT_LENGTH:-$(jq -r '.context_length // 32768' <<<"$size")}"
-  [[ "$CONTEXT_LENGTH" =~ ^[0-9]+$ ]] || die "context length must be an integer"
+  CONTEXT_LENGTH=$(parse_context_length "${CONTEXT_LENGTH:-$(jq -r '.context_length // 32768' <<<"$size")}")
+  check_image "${LLMHOST_IMAGE:-}"
 
   # Environment handed to the container (image/entrypoint.sh documents each variable).
   CONTAINER_ENV=$(jq -nc \
@@ -165,9 +165,44 @@ wait_ready() {
   return 1
 }
 
+# "32768", "64k", "128K" -> tokens. Rejects tiny values (a typo like "128" would cripple the model).
+parse_context_length() {
+  local v="${1// /}" n
+  if [[ "$v" =~ ^([0-9]+)[kK]$ ]]; then n=$(( BASH_REMATCH[1] * 1024 ))
+  elif [[ "$v" =~ ^[0-9]+$ ]]; then n=$v
+  else die "context length must be a number of tokens like 32768 or 32k (got '$1')"; fi
+  (( n >= 2048 && n <= 1048576 )) || die "context length $n is out of range (2048-1048576 tokens). Did you mean ${v}k?"
+  printf '%s' "$n"
+}
+
+# Fail before paying for a GPU if the image can't be pulled (most common first-run mistake).
+# Only public GHCR images can be checked anonymously; others are skipped.
+check_image() {
+  local image=$1 repo tag token code
+  [[ -n "$image" ]] || die "LLMHOST_IMAGE is empty"
+  [[ "$image" == ghcr.io/* && -z "${RUNPOD_REGISTRY_AUTH_ID:-}" ]] || { log "image: $image (not pre-checked)"; return 0; }
+  repo=${image#ghcr.io/}; tag=latest
+  if [[ "${repo##*/}" == *:* ]]; then tag=${repo##*:}; repo=${repo%:*}; fi
+  token=$(curl -fsS -m 20 "https://ghcr.io/token?scope=repository:${repo}:pull" 2>/dev/null | jq -r '.token // empty' 2>/dev/null || true)
+  code=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -I \
+    -H "Authorization: Bearer ${token}" \
+    -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+    "https://ghcr.io/v2/${repo}/manifests/${tag}" || true)
+  case "$code" in
+    200) log "image $image is pullable" ;;
+    401|403|404) die "image $image cannot be pulled anonymously (HTTP $code). Run the 'Build image' workflow, then set the package visibility to Public (docs/SETUP.md step 5)." ;;
+    *) warn "could not verify image $image (HTTP $code); continuing" ;;
+  esac
+}
+
 abort_up() {
   local id=$1 reason=$2
   trap - INT TERM
+  if declare -F provider_logs >/dev/null; then
+    [[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::group::Logs of $id (last lines)" >&2
+    provider_logs "$id" >&2 || log "(logs unavailable)"
+    [[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::endgroup::" >&2
+  fi
   if [[ "$KEEP_ON_FAILURE" == true ]]; then
     warn "instance $id left running for debugging (KEEP_ON_FAILURE=true). Run 'down' when done."
   else

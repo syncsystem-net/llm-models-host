@@ -31,7 +31,7 @@ on:
         type: string
         default: ""
       context_length:
-        description: Context window in tokens (empty = size default 32k / 64k / 128k)
+        description: Context window in tokens, e.g. 65536 or 64k (empty = size default 32k / 64k / 128k)
         type: string
         default: ""
       recreate:

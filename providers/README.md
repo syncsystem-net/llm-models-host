@@ -21,6 +21,7 @@ GitHub summaries — is shared, so a new provider is usually ~100 lines.
 | `provider_status ID` | Print a status word. `ERROR`, `TERMINATED`, `EXITED` or `FAILED` aborts `up`. |
 | `provider_terminate ID` | Delete the instance and everything billed with it. Treat "already gone" as success. |
 | `provider_catalog` | *Optional.* Print markdown table rows of live prices for the GPUs in `sizes.json`. |
+| `provider_logs ID` | *Optional.* Print recent container logs; shown in the run when `up` fails. |
 
 Helpers available from `lib/common.sh`: `log`, `warn`, `die`, `mask`, `SIZE`, `PROVIDER_DIR`.
 

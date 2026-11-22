@@ -1,0 +1,5 @@
+{
+  "small":  { "label": "24 GB GPU (g6.xlarge, L4)",       "instance_type": "g6.xlarge",   "est_usd_per_hour": 0.80, "disk_gb": 100, "context_length": 32768 },
+  "medium": { "label": "48 GB GPU (g6e.xlarge, L40S)",    "instance_type": "g6e.xlarge",  "est_usd_per_hour": 1.86, "disk_gb": 150, "context_length": 65536 },
+  "large":  { "label": "80 GB GPU (p5 H100, per GPU)",    "instance_type": "p5.4xlarge",  "est_usd_per_hour": 6.88, "disk_gb": 200, "context_length": 131072 }
+}

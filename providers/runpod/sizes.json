@@ -1,0 +1,26 @@
+{
+  "small": {
+    "label": "24 GB GPU (RTX 4090 class)",
+    "gpus": ["NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 3090", "NVIDIA RTX A5000"],
+    "est_usd_per_hour": 0.69,
+    "disk_gb": 80,
+    "context_length": 32768,
+    "notes": "Fits a ~27B model at Q4 (~18 GB) with ~32k context. Cheapest; fastest per dollar for one user."
+  },
+  "medium": {
+    "label": "48 GB GPU (L40S / RTX 6000 Ada / A6000)",
+    "gpus": ["NVIDIA L40S", "NVIDIA RTX 6000 Ada Generation", "NVIDIA RTX A6000"],
+    "est_usd_per_hour": 0.86,
+    "disk_gb": 100,
+    "context_length": 65536,
+    "notes": "Room for 64k+ context (agents like Claude Code want this) or Q8 quantization of a ~27B model."
+  },
+  "large": {
+    "label": "80 GB GPU (H100)",
+    "gpus": ["NVIDIA H100 80GB HBM3", "NVIDIA H100 PCIe", "NVIDIA H100 NVL"],
+    "est_usd_per_hour": 2.69,
+    "disk_gb": 150,
+    "context_length": 131072,
+    "notes": "Fastest tokens/sec, 128k context, or several models / ~70B models at Q4."
+  }
+}

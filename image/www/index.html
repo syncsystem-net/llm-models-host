@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>LLM Models Host</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e4e4df;
+    --accent: #2f6fed; --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030; --code: #f1f1ec;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121211; --panel: #1b1b1a; --text: #ecece8; --muted: #9a9a93; --line: #2c2c2a;
+            --accent: #7aa2ff; --ok: #4cc38a; --warn: #f0b44c; --bad: #ff7b7b; --code: #232321; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; justify-content: space-between; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 10px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px; border-radius: 999px;
+          border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .ready .dot { background: var(--ok); } .degraded .dot, .pulling .dot, .loading .dot, .starting .dot { background: var(--warn); }
+  .error .dot, .offline .dot { background: var(--bad); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .kv .k { color: var(--muted); font-size: 12px; } .kv .v { font-weight: 550; overflow-wrap: anywhere; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  tr:last-child td { border-bottom: 0; }
+  code, pre { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0 0; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tabs button, .btn { border: 1px solid var(--line); background: var(--panel); color: var(--text);
+                       border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  input { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line);
+          background: var(--bg); color: var(--text); flex: 1 1 240px; min-width: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .muted { color: var(--muted); } .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .small { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>LLM Models Host</h1>
+    <span id="state" class="pill offline"><span class="dot"></span><span id="state-text">connecting…</span></span>
+  </header>
+  <p id="message" class="muted small"></p>
+
+  <div class="panel grid" id="facts"></div>
+
+  <h2>Models</h2>
+  <div class="panel"><table><thead><tr><th>Name (use as the <code>model</code> field)</th><th>Status</th></tr></thead>
+    <tbody id="models"><tr><td colspan="2" class="muted">—</td></tr></tbody></table></div>
+
+  <h2>Endpoints</h2>
+  <div class="panel">
+    <table><tbody id="endpoints"></tbody></table>
+    <p class="small muted">Every endpoint requires <code>Authorization: Bearer &lt;token&gt;</code> or <code>x-api-key: &lt;token&gt;</code>.
+      The model is selected by the <code>model</code> field in the request body (industry standard), so one URL serves every installed model.</p>
+  </div>
+
+  <h2>Use it</h2>
+  <div class="panel">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <pre id="snippet"></pre>
+  </div>
+
+  <h2>Check your token</h2>
+  <div class="panel">
+    <div class="row">
+      <input id="token" type="password" placeholder="Paste your API token (kept in this tab only)" autocomplete="off">
+      <button class="btn primary" id="check">Test</button>
+    </div>
+    <p id="check-result" class="small muted">Calls <code>GET /v1/models</code> from your browser.</p>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const base = window.location.origin;
+  let status = null, tab = "claude";
+
+  const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
+  const fmtTime = (epoch) => epoch ? new Date(epoch * 1000).toLocaleString() : "—";
+  const remaining = (epoch) => {
+    if (!epoch) return "no expiry";
+    const s = epoch - Date.now() / 1000;
+    if (s <= 0) return "expired";
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return `${h}h ${m}m left`;
+  };
+  const firstModel = () => (status && status.models && status.models[0] && status.models[0].name) || "MODEL_NAME";
+
+  const snippets = {
+    claude: () => `# Claude Code (Anthropic-compatible API served by Ollama)
+export ANTHROPIC_BASE_URL="${base}"
+export ANTHROPIC_AUTH_TOKEN="<your-token>"
+export ANTHROPIC_API_KEY=""
+export ANTHROPIC_DEFAULT_SONNET_MODEL="${firstModel()}"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="${firstModel()}"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="${firstModel()}"
+claude --model "${firstModel()}"`,
+    openai: () => `# Any OpenAI-compatible client / agent (OpenClaw, Codex, Continue, Cline, ...)
+# Base URL: ${base}/v1   API key: <your-token>   Model: ${firstModel()}
+curl ${base}/v1/chat/completions \\
+  -H "Authorization: Bearer <your-token>" -H "Content-Type: application/json" \\
+  -d '{"model":"${firstModel()}","messages":[{"role":"user","content":"Hello"}],"stream":true}'`,
+    anthropic: () => `curl ${base}/v1/messages \\
+  -H "x-api-key: <your-token>" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \\
+  -d '{"model":"${firstModel()}","max_tokens":512,"messages":[{"role":"user","content":"Hello"}]}'`,
+    ollama: () => `# Ollama native API
+curl ${base}/api/chat -H "Authorization: Bearer <your-token>" \\
+  -d '{"model":"${firstModel()}","messages":[{"role":"user","content":"Hello"}]}'
+
+# Python: pip install ollama
+from ollama import Client
+client = Client(host="${base}", headers={"Authorization": "Bearer <your-token>"})
+print(client.chat(model="${firstModel()}", messages=[{"role": "user", "content": "Hello"}]))`,
+  };
+  const tabNames = { claude: "Claude Code", openai: "OpenAI-compatible", anthropic: "Anthropic API", ollama: "Ollama API" };
+
+  function renderTabs() {
+    const t = $("tabs"); t.replaceChildren();
+    for (const k of Object.keys(snippets)) {
+      const b = el("button", tabNames[k]); b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(k === tab));
+      b.onclick = () => { tab = k; renderTabs(); };
+      t.appendChild(b);
+    }
+    $("snippet").textContent = snippets[tab]();
+  }
+
+  function render() {
+    const s = status || {};
+    const state = s.state || "offline";
+    $("state").className = "pill " + state;
+    $("state-text").textContent = state;
+    $("message").textContent = s.message || "";
+
+    const facts = [
+      ["Expires", s.expires_at ? `${fmtTime(s.expires_at)} (${remaining(s.expires_at)})` : "—"],
+      ["Started", fmtTime(s.started_at)],
+      ["Provider / size", [s.provider, s.size].filter(Boolean).join(" / ") || "—"],
+      ["GPU", s.gpu || "—"],
+      ["Context length", s.context_length ? String(s.context_length) : "—"],
+      ["Ollama", s.ollama_version || "—"],
+    ];
+    const f = $("facts"); f.replaceChildren();
+    for (const [k, v] of facts) { const d = el("div", null, "kv"); d.append(el("div", k, "k"), el("div", v, "v")); f.appendChild(d); }
+
+    const m = $("models"); m.replaceChildren();
+    for (const mod of (s.models || [])) {
+      const tr = el("tr"); const td = el("td"); td.appendChild(el("code", mod.name));
+      tr.append(td, el("td", mod.status, mod.status === "failed" ? "bad" : (mod.status === "loaded" || mod.status === "available") ? "ok" : "muted"));
+      m.appendChild(tr);
+    }
+    if (!m.children.length) { const tr = el("tr"); const td = el("td", "No models reported yet", "muted"); td.colSpan = 2; tr.appendChild(td); m.appendChild(tr); }
+
+    const urls = Array.from(new Set([base, ...(s.public_urls || [])]));
+    const rows = [
+      ["Base URLs", urls.join("\n")],
+      ["OpenAI-compatible", `${base}/v1  (chat/completions, completions, embeddings, models)`],
+      ["Anthropic-compatible", `${base}/v1/messages`],
+      ["Ollama native", `${base}/api  (chat, generate, tags, show, pull, ...)`],
+      ["Status (public)", `${base}/status.json`],
+    ];
+    const e = $("endpoints"); e.replaceChildren();
+    for (const [k, v] of rows) { const tr = el("tr"); const td = el("td"); td.style.whiteSpace = "pre-wrap"; td.appendChild(el("code", v)); tr.append(el("td", k, "muted"), td); e.appendChild(tr); }
+    renderTabs();
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch("/status.json", { cache: "no-store" });
+      status = r.ok ? await r.json() : { state: "starting", message: "Waiting for the server to publish its status…" };
+    } catch (_) { status = { state: "offline", message: "Server unreachable." }; }
+    render();
+    const settled = status && (status.state === "ready" || status.state === "degraded");
+    setTimeout(poll, settled ? 30000 : 5000);
+  }
+
+  $("check").onclick = async () => {
+    const out = $("check-result"); const token = $("token").value.trim();
+    if (!token) { out.textContent = "Paste a token first."; out.className = "small bad"; return; }
+    out.textContent = "Checking…"; out.className = "small muted";
+    try {
+      const r = await fetch("/v1/models", { headers: { Authorization: "Bearer " + token } });
+      if (r.ok) {
+        const j = await r.json();
+        const names = (j.data || []).map((d) => d.id).join(", ") || "(none)";
+        out.textContent = "Token accepted. Models: " + names; out.className = "small ok";
+      } else { out.textContent = `Rejected (HTTP ${r.status}).`; out.className = "small bad"; }
+    } catch (err) { out.textContent = "Request failed: " + err; out.className = "small bad"; }
+  };
+
+  render(); poll();
+})();
+</script>
+</body>
+</html>

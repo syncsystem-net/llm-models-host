@@ -1,0 +1,66 @@
+# Rendered at container start by entrypoint.sh (envsubst only replaces ${API_TOKEN}).
+worker_processes auto;
+pid /run/nginx.pid;
+error_log /dev/stderr warn;
+
+events { worker_connections 1024; }
+
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  server_tokens off;
+  sendfile on;
+
+  # No headers are logged, so tokens never end up in logs.
+  log_format llmhost '$remote_addr "$request" $status $body_bytes_sent ${request_time}s';
+  access_log /dev/stdout llmhost;
+
+  server {
+    listen 8080 default_server;
+    root /srv/www;
+    client_max_body_size 64m;
+
+    # Public: dashboard + status (no secrets in either).
+    location = / {
+      add_header Cache-Control "no-store" always;
+      try_files /index.html =404;
+    }
+    location = /status.json {
+      add_header Cache-Control "no-store" always;
+      add_header Access-Control-Allow-Origin "*" always;
+      try_files /status.json =503;
+    }
+
+    # Protected: Ollama native (/api/*), OpenAI-compatible (/v1/chat/completions, /v1/models, ...)
+    # and Anthropic-compatible (/v1/messages) APIs.
+    # Accepts "Authorization: Bearer <token>" (OpenAI SDKs, ANTHROPIC_AUTH_TOKEN)
+    # or "x-api-key: <token>" (ANTHROPIC_API_KEY / Anthropic SDKs).
+    location ~ ^/(api|v1)/ {
+      default_type application/json;
+
+      set $llmhost_authed 0;
+      if ($http_authorization = "Bearer ${API_TOKEN}") { set $llmhost_authed 1; }
+      if ($http_x_api_key = "${API_TOKEN}") { set $llmhost_authed 1; }
+      if ($llmhost_authed = 0) {
+        return 401 '{"error":{"type":"authentication_error","message":"missing or invalid token"}}\n';
+      }
+
+      proxy_pass http://127.0.0.1:11434;
+      proxy_http_version 1.1;
+      proxy_set_header Host 127.0.0.1:11434;
+      proxy_set_header Origin "";
+      proxy_set_header Authorization "";
+      proxy_set_header X-Api-Key "";
+      proxy_set_header Connection "";
+
+      # Streaming (SSE / NDJSON) friendly; long generations allowed.
+      proxy_buffering off;
+      proxy_request_buffering off;
+      proxy_cache off;
+      proxy_read_timeout 3600s;
+      proxy_send_timeout 3600s;
+    }
+
+    location / { return 404; }
+  }
+}

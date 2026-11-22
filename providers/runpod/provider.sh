@@ -133,6 +133,16 @@ provider_status() {
   esac
 }
 
+# Optional: print the last container + system log lines (used when `up` fails).
+# The endpoint is an SSE stream that never ends on its own, so read for a few seconds.
+provider_logs() {
+  curl -sS -N -m "${RUNPOD_LOG_SECONDS:-8}" -K - -H "Accept: text/event-stream" \
+    "$RUNPOD_API/v2/pods/$1/logs?tail=${RUNPOD_LOG_LINES:-120}" \
+    <<<"header = \"Authorization: Bearer ${RUNPOD_API_KEY}\"" 2>/dev/null \
+    | sed -n 's/^data: *//p' \
+    | jq -r '"[\(.source // "?")] \(.line // .)"' 2>/dev/null || true
+}
+
 # Optional: live list price + availability for every GPU referenced in sizes.json.
 provider_catalog() {
   rp GET "/v2/catalog/gpus?include=AVAILABILITY&product=POD"

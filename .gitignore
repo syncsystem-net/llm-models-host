@@ -1,0 +1,5 @@
+# Local secrets — never commit (this repository is public).
+.env
+.env.*
+*.pem
+*.key
